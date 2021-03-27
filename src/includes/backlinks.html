@@ -1,0 +1,23 @@
+{% if backlinks.length > 0 %}
+<div class="block">
+    <article class="message">
+        <div class="message-header">
+            <p>Backlinks</p>
+        </div>
+        <div class="message-body">
+            <div class="columns is-centered is-multiline py-5">
+                {% for link in backlinks %}
+                <div class="column">
+                    <div class="notification">
+                        <p class="is-size-6">
+                            <a href="{{link.url}}" class="backlink__link">{{link.title}}</a>
+                            <!-- <div>{{link.preview | markdownify }}</div> -->
+                        </p>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </article>
+</div>
+{% endif %}

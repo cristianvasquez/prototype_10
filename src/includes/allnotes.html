@@ -1,0 +1,8 @@
+<ul>
+    {%- for current in collections.notes -%}
+
+    <li>
+        <a href="{{current.url}}">{{current.data.title}} ({{current.data['date updated']}})</a>
+    </li>
+    {% endfor %}
+</ul>

@@ -1,0 +1,334 @@
+<html>
+
+<head>
+    <meta charset="utf-8" />
+
+    <!-- You can replace this script tag with
+           <script src="https://omar.website/pretty-print/vendor/diff_match_patch.js"></script>
+         if you're trying to edit and run this page locally. -->
+    <script src="https://omar.website/pretty-print/vendor/diff_match_patch.js"></script>
+
+    <style>
+        #canv {
+            position: absolute;
+            left: 0;
+            top: 0;
+        }
+
+        body {
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        *:not(textarea) {
+            user-select: none;
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        #details {
+            position: absolute;
+            right: 0;
+            top: 0;
+            padding: 1em 1em;
+            z-index: 1;
+            font: 14px Verdana, sans-serif;
+            background: rgba(255, 192, 192, 0.87);
+            max-width: 600px;
+        }
+
+        #details textarea {
+            width: 600px;
+            height: 300px;
+            word-break: break-all;
+            font: 16px Operator Mono SSm, monospace;
+            line-height: 140%;
+            background: #eee;
+        }
+    </style>
+</head>
+
+<body>
+    <details id="details">
+        <summary>?</summary>
+
+        <p><a href="https://twitter.com/rsnous/status/1367305117293178881">pretty print</a></p>
+
+        <p>
+            Start with text:<br>
+            <textarea id="main"></textarea>
+        </p>
+        <p>
+            Animate into text:<br>
+            <textarea id="shadow"></textarea>
+        </p>
+
+        <p>
+            <input type="checkbox" id="prefer-words" name="prefer-words">
+            <label for="prefer-words"> <a
+                    href="https://github.com/google/diff-match-patch/wiki/API#diff_cleanupsemanticdiffs--null">Clean
+                    up</a> diff (will generally prefer to track whole words instead of characters)</label>
+        </p>
+
+        <p>You should look at the source for this page! (and maybe save
+            it to disk and mess around with it.) I hope it's not that
+            complicated.</p>
+    </details>
+
+    <script>
+        const [main, shadow, preferWords] = [document.getElementById('main'),
+        document.getElementById('shadow'),
+        document.getElementById('prefer-words')];
+        function remake() {
+            make(main.value, shadow.value, preferWords.checked);
+        };
+        main.oninput = shadow.oninput = preferWords.oninput = remake;
+
+        const details = document.getElementById('details');
+        details.open = localStorage.getItem('details.open') === 'true';
+        details.ontoggle = () => {
+            localStorage.setItem('details.open', String(details.open));
+        };
+
+        const obj = {
+            "manifest_version": 2,
+
+            "name": "TabFS",
+            "description": "Mount your browser tabs as a filesystem",
+            "version": "1.0",
+
+            "permissions": [
+                "tabs", "tabCapture", "debugger", "nativeMessaging", "management",
+                "unlimitedStorage",
+                "<all_urls>"
+            ],
+
+            "background": {
+                "scripts": ["vendor/browser-polyfill.js", "background.js"],
+                "persistent": true
+            },
+
+            "browser_specific_settings": {
+                "gecko": {
+                    "id": "tabfs@rsnous.com"
+                }
+            }
+        };
+        main.value = JSON.stringify(obj);
+        shadow.value = JSON.stringify(obj, null, 2);
+        remake();
+
+        function make(mainText, shadowText, cleanupSemantic = false) {
+            // mainText: source text (what shows up on the screen initially)
+            // shadowText: target text (what the source text animates into when you mousedown)
+
+            const mainChars = mainText.split('').map(c => ({ c, x: 0, y: 0 }));
+            const shadowChars = shadowText.split('').map(c => ({ c, x: 0, y: 0 }));
+
+            // it really bothers me that all these rich variables and
+            // intermediate data structures I'm creating here -- that a
+            // programmer-user might want to look at and mess with -- are
+            // _trapped_ inside this lexical scope, inaccessible from the REPL.
+            // you can't get at them!! https://twitter.com/rsnous/status/1340353349992902657
+
+            const diffs = (function () {
+                const differ = new diff_match_patch();
+                const diffs = differ.diff_main(mainText, shadowText);
+                // cleanupSemantic tries to chunk together diffs -- may be
+                // better if you don't want to have individual characters
+                // reused, for instance, just whole words:
+                if (cleanupSemantic) { differ.diff_cleanupSemantic(diffs); }
+                // (it doesn't work great for pretty-print example)
+                return diffs;
+            })();
+
+            const canvas = (function () {
+                try { document.getElementById('canv').remove(); } catch (e) { }
+                document.body.insertAdjacentHTML('afterbegin', `<canvas width="1000" height="600" id="canv"></canvas>`);
+                return document.getElementById('canv');
+            })();
+
+            const Renderer = (function () {
+                function setDPI(canvas, dpi) {
+                    // Set up CSS size.
+                    canvas.style.width = canvas.style.width || canvas.width + 'px';
+                    canvas.style.height = canvas.style.height || canvas.height + 'px';
+
+                    // Resize canvas and scale future draws.
+                    var scaleFactor = dpi / 96;
+                    canvas.width = Math.ceil(canvas.width * scaleFactor);
+                    canvas.height = Math.ceil(canvas.height * scaleFactor);
+                    var ctx = canvas.getContext('2d');
+                    ctx.scale(scaleFactor, scaleFactor);
+                }
+                setDPI(canvas, 192);
+
+                const ctx = canvas.getContext('2d');
+                ctx.textBaseline = 'top';
+                ctx.font = '16px Operator Mono SSm, monospace';
+                const metrics = ctx.measureText('m');
+                const lineHeight = metrics.actualBoundingBoxDescent * 1.4;
+
+                return {
+                    computePositions(chars) {
+                        let { x, y } = chars[0];
+                        for (let char of chars) {
+                            char.x = x; char.y = y;
+                            if (char.c === '\n' || char.x > 570) {
+                                x = 0;
+                                y += lineHeight;
+                            } else {
+                                x += metrics.width;
+                            }
+                        }
+                    },
+                    charIndexUnder(x, y) {
+                        for (let [i, char] of mainChars.entries()) {
+                            if (char.x < x && char.y < y &&
+                                x < char.x + metrics.width &&
+                                y < char.y + lineHeight) {
+                                return i;
+                            }
+                        }
+                    },
+                    clear() { ctx.clearRect(0, 0, 1000, 600); },
+                    render(chars, startIdx = 0, endIdx = chars.length - 1) {
+                        for (let i = startIdx; i <= endIdx; i++) {
+                            const char = chars[i];
+                            const x = "animX" in char ? char.animX : char.x;
+                            const y = "animY" in char ? char.animY : char.y;
+                            if (char.bgStyle) {
+                                ctx.save();
+                                ctx.fillStyle = char.bgStyle;
+                                ctx.fillRect(x, y, metrics.width, lineHeight);
+                                ctx.restore();
+                            }
+                            ctx.fillStyle = char.fillStyle || 'black';
+                            ctx.fillText(char.c, x, y);
+                        }
+                    },
+                    ctx
+                };
+            })();
+
+            const Animator = (function () {
+                const renderFrame = (function () {
+                    // straight from https://easings.net/#easeInOutCubic
+                    function easeInOutCubic(x) {
+                        return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+                    }
+
+                    function animate(x0, x1, t, ease = easeInOutCubic) {
+                        return x0 * (1 - ease(t)) + x1 * ease(t);
+                    }
+
+                    return function renderFrame(t) {
+                        for (let char of mainChars) {
+                            if ('shadowIndex' in char) {
+                                const shadowChar = shadowChars[char.shadowIndex];
+                                char.animX = animate(char.x, shadowChar.x, t);
+                                char.animY = animate(char.y, shadowChar.y, t);
+                            } else {
+                                char.fillStyle = `rgba(0, 0, 0, ${animate(1, 0, t)})`;
+                            }
+                        }
+
+                        Renderer.clear();
+                        Renderer.render(mainChars);
+
+                        for (let createChars of createCharRuns) {
+                            createChars.forEach(char => {
+                                char.fillStyle = `rgba(0, 0, 0, ${animate(0, 1, t)})`;
+                            });
+                            Renderer.render(createChars);
+                        }
+                    };
+                })();
+
+                let target = 0, rate, slowMode;
+                let t = 0;
+
+                let animationId = 0;
+                function startAnimation() {
+                    if (animationId !== 0) return;
+                    animationId = requestAnimationFrame(timestamp => {
+                        (function frame(prevTimestamp, timestamp) {
+                            if (Math.abs(target - t) > 0.01) {
+                                t += (target - t) / (timestamp - prevTimestamp) * (slowMode ? (rate / 4) : rate);
+                                renderFrame(t);
+
+                                animationId = requestAnimationFrame(newTimestamp => frame(timestamp, newTimestamp));
+                            } else {
+                                // stop animation
+                                animationId = 0;
+                            }
+                        })(timestamp - 20, timestamp)
+                    });
+                }
+
+                return {
+                    get target() { return target; },
+                    set target(t) {
+                        target = t;
+                        // dynamically restart animation
+                        startAnimation();
+                    },
+                    get rate() { return rate; },
+                    set rate(s) { rate = s; },
+                    get slowMode() { return slowMode; },
+                    set slowMode(sm) { slowMode = sm; }
+                };
+            })();
+
+            Renderer.computePositions(mainChars);
+            Renderer.render(mainChars);
+
+            // creation of createCharRuns (later) requires that we compute
+            // positions for shadowChars beforehand.
+            Renderer.computePositions(shadowChars);
+
+            const createCharRuns = [];
+            (function () { // walk the diffs to construct a mapping mainChars -> shadowChars
+                let i = 0, shadowI = 0;
+                for (let { 0: kind, 1: text } of diffs) {
+                    if (kind === 0) { // this run of mainText is preserved in shadowText
+                        let textEnd = i + text.length;
+                        while (i < textEnd) {
+                            mainChars[i].shadowIndex = shadowI;
+                            i++; shadowI++;
+                        }
+
+                    } else if (kind === -1) { // this run of mainText is removed in shadowText
+                        let textEnd = i + text.length;
+                        while (i < textEnd) {
+                            i++;
+                        }
+
+                    } else if (kind === 1) { // this run is _created_ in shadowText
+                        const createChars = [];
+                        let textEnd = shadowI + text.length;
+                        while (shadowI < textEnd) {
+                            // uses (depends on) computed position from shadowChar
+                            createChars.push({ ...shadowChars[shadowI] })
+                            shadowI++;
+                        }
+                        createCharRuns.push(createChars);
+                    }
+                }
+            })();
+
+            canvas.onmousemove = function (e) {
+                const charIdx = Renderer.charIndexUnder(e.offsetX, e.offsetY);
+                const char = mainChars[charIdx];
+                if (!char) { document.body.style.cursor = 'auto'; return; }
+
+                document.body.style.cursor = 'pointer';
+            };
+            canvas.onmousedown = canvas.ontouchstart = function (e) { Animator.target = 1; Animator.rate = 1; };
+            canvas.onmouseup = canvas.ontouchend = function (e) { Animator.target = 0; Animator.rate = 2; };
+            document.onkeydown = document.onkeyup = function (e) { Animator.slowMode = e.shiftKey; return true; }
+        }
+    </script>
+</body>
+
+</html>
