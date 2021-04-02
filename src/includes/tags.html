@@ -1,7 +1,7 @@
 {% if tags.length > 0 %}
-<div class="block">
+<ul>
     {%- for tag in tags -%}
-    <span class="tag">{{tag}}</span>
+    <li>{{tag}}</li>
     {% endfor %}
-</div>
+</ul>
 {% endif %}

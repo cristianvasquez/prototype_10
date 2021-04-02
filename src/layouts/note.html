@@ -6,7 +6,17 @@ layout: default
     <div class="content">
         <h1>{{title}}</h1>
         {{content}}
+
+        {% if backlinks.length > 0 %}
+        <h2>Backlinks</h2>
+        <ul>
+            {%- for current in backlinks -%}
+            <li>
+                <a class="internal" data-uuid="{{current.url}}" href="{{current.url}}">{{current.title}}</a>
+            </li>
+            {% endfor %}
+        </ul>
+        {% endif %}
     </div>
     <div class="date">{{post.data['date updated']}}</div>
-
 </div>
