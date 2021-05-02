@@ -7,6 +7,8 @@ A variant of Andy Matuschak's note-taking system, using 11ty to publish and Obsi
 
 Notes have different views.
 
+![View](view.png)
+
 ## How to
 
 1. Install the necessary dependencies
