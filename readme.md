@@ -1,3 +1,6 @@
+
+Experiment stopped. I don't feel identified.
+
 # Prototype_10
 
 A variant of Andy Matuschak's note-taking system, using 11ty to publish and Obsidian to author notes. 
